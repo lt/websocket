@@ -73,15 +73,14 @@ class Handshake {
                     $data = substr($data, $bytes);
                     return;
                 }
-                $responseBuffer = '';
-                \Amp\onReadable($socket, function($reader, $socket) use ($deferred, &$responseBuffer) {
-                    $thisRead = stream_get_line($socket, 8192, "\r\n");
-                    $responseBuffer .= $thisRead . "\r\n";
-                    if ($thisRead != '') {
-                        return;
+                \Amp\onReadable($socket, function($reader, $socket) use ($deferred) {
+                    $data = stream_get_line($socket, 16384, "\r\n\r\n");
+                    // If we get this much data without valid headers, something has probably gone wrong.
+                    if ($data === false || strlen($data) === 16384) {
+                        throw new HandshakeException('Invalid headers received');
                     }
                     \Amp\cancel($reader);
-                    $deferred->succeed($this->parseResponse($responseBuffer));
+                    $deferred->succeed($this->parseResponse($data));
                 });
             } else {
                 $deferred->succeed(null);
@@ -97,7 +96,7 @@ class Handshake {
         }
         preg_match_all("(
             (?P<field>[^()<>@,;:\\\"/[\\]?={}\x01-\x20\x7F]+):[\x20\x09]*
-            (?P<value>[^\x01-\x08\x0A-\x1F\x7F]*)[\x0D]?[\x20\x09]*[\r]?[\n]
+            (?P<value>[^\x01-\x08\x0A-\x1F\x7F]*)[\x0D]?[\x20\x09]*(?:\r\n|$)
         )x", $data, $m);
         $headers = [];
         foreach ($m["field"] as $idx => $field) {
